@@ -36,7 +36,9 @@ class RateLimiter:
              ``self.client.zremrangebyscore(key, 0, now - WINDOW_SECONDS)``
           3. Trả về ``self.client.zcard(key)``
         """
-        raise NotImplementedError("TODO (CP3): cài đặt hit_count")
+        now = now if now is not None else time.time()
+        self.client.zremrangebyscore(self._key(user_id), 0, now - WINDOW_SECONDS)
+        return self.client.zcard(self._key(user_id))
 
     def check(self, user_id: str, now: float | None = None) -> None:
         """Cho qua nếu còn quota, ngược lại raise 429.
@@ -56,4 +58,10 @@ class RateLimiter:
         Lưu ý thứ tự: **kiểm tra trước, ghi nhận sau**. Ghi trước rồi mới đếm
         sẽ chặn nhầm ngay ở request thứ ``limit``.
         """
-        raise NotImplementedError("TODO (CP3): cài đặt check")
+        now = now if now is not None else time.time()
+        hit_count = self.hit_count(user_id, now)
+        if hit_count >= self.limit:
+            raise HTTPException(status_code=429, detail="rate limit exceeded",
+                                headers={"Retry-After": str(WINDOW_SECONDS)})
+        self.client.zadd(self._key(user_id), {f"{now}:{uuid.uuid4().hex}": now})
+        self.client.expire(self._key(user_id), WINDOW_SECONDS)
